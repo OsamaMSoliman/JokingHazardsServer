@@ -1,0 +1,13 @@
+Server receives N-1 IDs and forward them to the judge .. judge sends the winner ID back .. then the server broadcast that ID back to all the senders
+
+All the cards in one image in one Atlas
+
+How to Get client ID from the http request?
+
+The client notifies the server as soon as it logs in .. the server creates rooms of 3 and count down 20 secs (giving others a chance to join the game, room max is 10) .. after that it broadcasts to all clients to join the game and chooses a judge
+
+
+1 min Timeout in case if disconnected .. server kicks the delayer if it disconnected for 2 games in a row
+
+joint_match: global array 
+onReceiveRequest -> add to joint_match, check if GreaterThanOrEqual MIN, check if !timerAlreadyStarted, start timer, when timer finishes, broadcast to all in the array,
