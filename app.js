@@ -31,41 +31,48 @@ function getNewRandomStringFor(dic) {
 function createRoom(size) {
     return {
         roomSize: size,
-        judgeIndex: 0,
+        judgeId: null,
         players: {}
     }
 }
 
-function getRandomCard() { return Math.random()  * 360 }
+function getRandomCard() { return Math.floor(Math.random() * 360) }
 
 function sendToAllMatchStarted() {
-    let rid = getNewRandomStringFor(rooms)
+    const rid = getNewRandomStringFor(rooms)
     rooms[rid] = createRoom(joint_match.length)
+    const cardId = getRandomCard()
 
     joint_match.forEach((res, i) => {
-        let pid = getNewRandomStringFor(rooms[rid].players)
+        const pid = getNewRandomStringFor(rooms[rid].players)
         res.send({
             "roomId": rid,
             "playerId": pid,
-            "isJudge": i==rooms[rid].judgeIndex,
-            "cardId": getRandomCard()
-          })
+            "isJudge": i == 0,
+            "cardId": cardId
+        })
         rooms[rid].players[pid] = null
     });
     joint_match.length = 0
 }
 
-function sendToJudge(roomId, cardId) {
-    const thePlayers = rooms[roomId].players
-    for(const p in thePlayers){
-        if(p!= rooms[roomId].j&& thePlayers[p]){
-            thePlayers[p].send()
-        }
-    }
+function sendToJudge(roomId, judgeId, cardId) {
+    const thePlayers = Object.keys(rooms[roomId].players)
+    const x = thePlayers.indexOf(judgeId)++
+    // TODO
+    if (thePlayers[x])
+        thePlayers[x].send(cardId)
+
 }
 
-function sendToAllExceptJudge(roomId,cardId) {
-    
+function sendToAllExceptJudge(roomId, cardId) {
+    const thePlayers = rooms[roomId].players
+    for (const pid in thePlayers) {
+        if (pid != rooms[roomId].judgeId && thePlayers[pid]) {
+            // TODO
+            thePlayers[pid].send(cardId)
+        }
+    }
 }
 
 /**================================================================================================= */
@@ -86,25 +93,29 @@ app.get('/', (request, response) => {
     }
 })
 
-app.get('/friends', (request, response) => {
-    console.log(request.headers)
-    console.log("===========================================")
-    console.log(response.headers)
-    response.status(404).send("Not Implemented Yet!")
-})
-
 app.post('/', (request, response) => {
     const result = Joi.validate(request.body, msgSchema)
     if (result.error) return response.status(400).send(result.error)
     let roomId = request.body.room
     let playerId = request.body.playerId
-    if(roomId in rooms && playerId in rooms[roomId].players){
-        if(Object.keys(rooms[roomId].players).indexOf(playerId) == rooms[roomId].judgeIndex){
+    if (roomId in rooms && playerId in rooms[roomId].players) {
+        if (playerId == rooms[roomId].judgeId) {
+            // if(Object.keys(rooms[roomId].players).indexOf(playerId) == rooms[roomId].judgeIndex){
             // TODO send to all except the judge the selected cardId
-        }else{
+            sendToAllExceptJudge(roomId, request.body.cardId)
+        } else {
             // TODO send that card to the judge to choose
+            sendToJudge(roomId,playerId,request.body.cardId)
         }
-    }else{
+    } else {
         response.status(406).send(result)
     }
+})
+
+app.get('/debug',(request,response)=>{
+    response.send(rooms)
+})
+
+app.get('/friends', (request, response) => {
+    response.status(404).send("Not Implemented Yet!")
 })
