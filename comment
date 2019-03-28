@@ -10,3 +10,18 @@ joint_match: global array
 onReceiveRequest -> add to joint_match, check if GreaterThanOrEqual MIN, check if !timerAlreadyStarted, start timer, when timer finishes, broadcast to all in the array,
 
 how to detect if a client got disconnected?
+
+
+
+>request to join a game
+>response with the 1st cards and if u r the judge
+
+)-> (X) empty Request from all clients
+)=>Request from Judge with the card he played
+->Response to All with the judge choice
+)>Request from All with what they chose
+=>Response to Judge with All the client choices
+
+)==>Request from Judge with the winner/judgement
+>Response to All with the judgement
+==> (X) empty Response to Judge

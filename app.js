@@ -8,13 +8,16 @@ const port = process.env.PORT || 2888
 const msgSchema = {
     roomId: Joi.string().required(),
     playerId: Joi.string().required(),
-    cardId: Joi.number().min(-1).max(360).required(),
+    // cardId: Joi.number().min(-1).max(360).required(),
+    cardId: Joi.string().regex(/[0-9]+_[0-9]+|-1/).required(),
 }
 const rooms = {}
 const joint_match = []
 const MAX = 4
 const MIN = 3
 const DELAY_BEFORE_MATCH = 20 * 1000
+const NUMBER_OF_PAGES = 20
+const NUM_OF_CARDS_PER_PAGE = 6 * 3
 let timerAlreadyStarted = false
 let timer
 
@@ -32,11 +35,13 @@ function createRoom(size) {
     return {
         roomSize: size,
         judgeId: null,
-        players: {}
+        players: {},
+        judgeChoices: [],
+        didJudgePlayHisCard: false
     }
 }
 
-function getRandomCard() { return Math.floor(Math.random() * 360) }
+function getRandomCard() { return Math.floor(Math.random() * NUMBER_OF_PAGES) + "_" + Math.floor(Math.random() * NUM_OF_CARDS_PER_PAGE) }
 
 function sendToAllMatchStarted() {
     const rid = getNewRandomStringFor(rooms)
@@ -45,6 +50,7 @@ function sendToAllMatchStarted() {
 
     joint_match.forEach((res, i) => {
         const pid = getNewRandomStringFor(rooms[rid].players)
+        if (i == 0) rooms[rid].judgeId = pid
         res.send({
             "roomId": rid,
             "playerId": pid,
@@ -56,27 +62,44 @@ function sendToAllMatchStarted() {
     joint_match.length = 0
 }
 
-function sendToJudge(roomId, judgeId, cardId) {
-    const thePlayers = Object.keys(rooms[roomId].players)
-    const x = thePlayers.indexOf(judgeId)++
-    // TODO
-    if (thePlayers[x])
-        thePlayers[x].send(cardId)
-
-}
-
 function sendToAllExceptJudge(roomId, cardId) {
     const thePlayers = rooms[roomId].players
     for (const pid in thePlayers) {
         if (pid != rooms[roomId].judgeId && thePlayers[pid]) {
-            // TODO
-            thePlayers[pid].send(cardId)
+            thePlayers[pid].send({ listOfCardIds: [cardId] })
+            thePlayers[pid] = null
         }
     }
 }
 
+function sendToJudge(roomId, judgeResponse) {
+    const interval = setInterval(() => {
+        if (rooms[roomId].judgeChoices.length > 0) {
+            clearInterval(interval)
+            judgeResponse.send({ listOfCardIds: rooms[roomId].judgeChoices })
+        }
+    }, 60 * 1000)
+}
+
+function nextJudge(roomId, judgeId) {
+    const playerKeyArray = Object.keys(rooms[roomId].players)
+    const indexOfNextJudge = playerKeyArray.indexOf(judgeId) + 1
+    rooms[roomId].judgeId = playerKeyArray[indexOfNextJudge]
+}
+
+function saveResponseObj(roomId, playerId, responseObj) {
+    rooms[roomId].players[playerId] = responseObj
+}
+
 /**================================================================================================= */
 app.use(express.json()) // enable parsing json objects in the body of the request
+// this to avoid: "no access-control-allow-origin" error
+app.use((request, response, next) => {
+    response.header("Access-Control-Allow-Origin", "*")
+    response.header("Access-Control-Allow-Methods", "GET,POST")
+    response.header("Access-Control-Allow-Headers", "Content-Type")
+    next()
+})
 app.listen(port, () => {
     console.log(`listening on port ${port}`);
 })
@@ -85,6 +108,7 @@ app.get('/', (request, response) => {
     if (joint_match.length >= MAX) {
         clearTimeout(timer)
         sendToAllMatchStarted()
+        timerAlreadyStarted = false
     }
     joint_match.push(response)
     if (joint_match.length >= MIN && !timerAlreadyStarted) {
@@ -96,23 +120,33 @@ app.get('/', (request, response) => {
 app.post('/', (request, response) => {
     const result = Joi.validate(request.body, msgSchema)
     if (result.error) return response.status(400).send(result.error)
-    let roomId = request.body.room
+    let roomId = request.body.roomId
     let playerId = request.body.playerId
     if (roomId in rooms && playerId in rooms[roomId].players) {
         if (playerId == rooms[roomId].judgeId) {
-            // if(Object.keys(rooms[roomId].players).indexOf(playerId) == rooms[roomId].judgeIndex){
-            // TODO send to all except the judge the selected cardId
-            sendToAllExceptJudge(roomId, request.body.cardId)
+            if (rooms[roomId].didJudgePlayHisCard) {
+                sendToAllExceptJudge(roomId, request.body.cardId)
+                response.sendStatus(418)
+                nextJudge(roomId, playerId)
+            } else {
+                rooms[roomId].didJudgePlayHisCard = true
+                sendToAllExceptJudge(roomId, request.body.cardId)
+                sendToJudge(roomId, response)
+            }
         } else {
-            // TODO send that card to the judge to choose
-            sendToJudge(roomId,playerId,request.body.cardId)
+            saveResponseObj(roomId, playerId, response)
+            // ! all clients must send this -1 request before the judge sending his card
+            if (request.body.cardId != -1) {
+                rooms[roomId].judgeChoices.push(request.body.cardId)
+            }
         }
+        console.log(rooms)
     } else {
         response.status(406).send(result)
     }
 })
 
-app.get('/debug',(request,response)=>{
+app.get('/debug', (request, response) => {
     response.send(rooms)
 })
 
