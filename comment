@@ -22,6 +22,6 @@ how to detect if a client got disconnected?
 )>Request from All with what they chose
 =>Response to Judge with All the client choices
 
-)==>Request from Judge with the winner/judgement
->Response to All with the judgement
+)==>Request from Judge with the winner card
+>Response to All with the winner, new card, new judge
 ==> (X) empty Response to Judge

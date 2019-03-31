@@ -10,6 +10,7 @@ const msgSchema = {
     playerId: Joi.string().required(),
     // cardId: Joi.number().min(-1).max(360).required(),
     cardId: Joi.string().regex(/[0-9]+_[0-9]+|-1/).required(),
+    isWinnerCard: Joi.boolean()
 }
 const rooms = {}
 const joint_match = []
@@ -18,8 +19,7 @@ const MIN = 3
 const DELAY_BEFORE_MATCH = 20 * 1000
 const NUMBER_OF_PAGES = 20
 const NUM_OF_CARDS_PER_PAGE = 6 * 3
-let timerAlreadyStarted = false
-let timer
+let timer = null
 
 /**================================================================================================= */
 
@@ -37,7 +37,7 @@ function createRoom(size) {
         judgeId: null,
         players: {},
         judgeChoices: [],
-        didJudgePlayHisCard: false
+        // didJudgePlayHisCard: false
     }
 }
 
@@ -62,11 +62,16 @@ function sendToAllMatchStarted() {
     joint_match.length = 0
 }
 
-function sendToAllExceptJudge(roomId, cardId) {
+// function sendToAllExceptJudge(roomId, cardId) {
+function sendToAllExcept(roomId, exceptId, cardId, newCardId = -1) {
     const thePlayers = rooms[roomId].players
     for (const pid in thePlayers) {
-        if (pid != rooms[roomId].judgeId && thePlayers[pid]) {
-            thePlayers[pid].send({ listOfCardIds: [cardId] })
+        if (pid != exceptId && thePlayers[pid]) {
+            thePlayers[pid].send({
+                listOfCardIds: [cardId], // keep it as a list, as I might send all the candidates with the winner
+                "isJudge": pid == rooms[roomId].judgeId,
+                "cardId": newCardId
+            })
             thePlayers[pid] = null
         }
     }
@@ -77,6 +82,7 @@ function sendToJudge(roomId, judgeResponse) {
         if (rooms[roomId].judgeChoices.length > 0) {
             clearInterval(interval)
             judgeResponse.send({ listOfCardIds: rooms[roomId].judgeChoices })
+            rooms[roomId].judgeChoices.length = 0
         }
     }, 60 * 1000)
 }
@@ -108,29 +114,32 @@ app.get('/', (request, response) => {
     if (joint_match.length >= MAX) {
         clearTimeout(timer)
         sendToAllMatchStarted()
-        timerAlreadyStarted = false
+        timer = null
     }
     joint_match.push(response)
-    if (joint_match.length >= MIN && !timerAlreadyStarted) {
+    if (joint_match.length >= MIN && timer == null) {
         timer = setTimeout(sendToAllMatchStarted, DELAY_BEFORE_MATCH);
-        timerAlreadyStarted = true
     }
 })
 
 app.post('/', (request, response) => {
     const result = Joi.validate(request.body, msgSchema)
     if (result.error) return response.status(400).send(result.error)
-    let roomId = request.body.roomId
-    let playerId = request.body.playerId
+    const roomId = request.body.roomId
+    const playerId = request.body.playerId
     if (roomId in rooms && playerId in rooms[roomId].players) {
         if (playerId == rooms[roomId].judgeId) {
-            if (rooms[roomId].didJudgePlayHisCard) {
-                sendToAllExceptJudge(roomId, request.body.cardId)
-                response.sendStatus(418)
+            // if (rooms[roomId].didJudgePlayHisCard) {
+            if (request.body.isWinnerCard) {
+                // sendToAllExceptJudge(roomId, request.body.cardId)
                 nextJudge(roomId, playerId)
+                const newCardId = getRandomCard()
+                sendToAllExcept(roomId, playerId, request.body.cardId, newCardId)
+                response.send({ "cardId": newCardId })
             } else {
-                rooms[roomId].didJudgePlayHisCard = true
-                sendToAllExceptJudge(roomId, request.body.cardId)
+                // rooms[roomId].didJudgePlayHisCard = true
+                // sendToAllExceptJudge(roomId, request.body.cardId)
+                sendToAllExcept(roomId, playerId, request.body.cardId)
                 sendToJudge(roomId, response)
             }
         } else {
